@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>自动投递简报</title>
+    <link rel="stylesheet" href="src/report.css" />
+  </head>
+  <body>
+    <header><div><h1>自动投递简报</h1><p id="period"></p></div><span id="mode"></span></header>
+    <main>
+      <section class="stats">
+        <div><strong id="processed">0</strong><span>处理岗位</span></div>
+        <div><strong id="applied">0</strong><span>成功投递</span></div>
+        <div><strong id="skipped">0</strong><span>跳过</span></div>
+        <div><strong id="failed">0</strong><span>失败</span></div>
+      </section>
+      <section class="review"><h2>本轮复盘</h2><p id="review"></p></section>
+      <section><h2>已投递岗位</h2><div id="jobs" class="jobs"></div><p id="empty" class="empty">本轮没有成功投递的岗位。</p></section>
+    </main>
+    <script src="src/report.js" type="module"></script>
+  </body>
+</html>

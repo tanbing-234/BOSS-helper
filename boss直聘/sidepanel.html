@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BOSS 求职助手</title>
+    <link rel="stylesheet" href="src/panel.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>求职助手</h1>
+        <p id="status">选择一个岗位后开始分析</p>
+      </div>
+      <div class="header-actions">
+        <div class="platform-switch" aria-label="招聘平台">
+          <button id="platform-boss" class="active" aria-pressed="true">BOSS</button>
+          <button id="platform-zhilian" aria-pressed="false">智联</button>
+        </div>
+        <button id="process-chat" class="icon-button chat-button" title="处理聊天消息" aria-label="处理聊天消息">消息</button>
+        <button id="open-settings" class="icon-button" title="设置" aria-label="设置">⚙</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="role-switch" aria-label="使用身份">
+        <button class="active" aria-pressed="true">应聘者</button>
+        <button disabled title="招聘者模式将在二期提供">招聘者 · 二期</button>
+      </div>
+
+      <section class="automation">
+        <div>
+          <strong id="automation-title">自动投递</strong>
+          <p id="auto-progress">等待启动</p>
+        </div>
+        <button id="auto-toggle" class="primary">开始</button>
+      </section>
+
+      <section class="schedule-controls">
+        <label for="schedule-time">定时自动投递</label>
+        <input id="schedule-time" type="datetime-local" />
+        <div class="schedule-actions">
+          <button id="schedule-start" class="primary">设置定时</button>
+          <button id="schedule-cancel" class="secondary">取消定时</button>
+        </div>
+        <p id="schedule-status">未设置定时任务</p>
+      </section>
+
+      <section class="search-context">
+        <p>当前推荐岗位：<strong id="current-role">识别中...</strong></p>
+        <p id="search-keywords" class="muted">启动后将按简历生成搜索关键词</p>
+      </section>
+      <section id="chat-status-panel" class="chat-status-panel hidden">
+        <strong>聊天处理</strong><p id="chat-progress">等待启动</p>
+        <div id="chat-context" class="chat-context hidden">
+          <h3 id="chat-context-title"></h3>
+          <p id="chat-context-meta"></p>
+          <p id="chat-context-description"></p>
+          <p id="chat-context-decision"></p>
+        </div>
+      </section>
+
+      <section class="debug-tools">
+        <button id="debug-log-toggle" class="secondary">查看运行日志</button>
+        <button id="debug-log-clear" class="secondary">清空日志</button>
+      </section>
+      <section id="debug-log-panel" class="debug-log-panel hidden">
+        <pre id="debug-log"></pre>
+      </section>
+
+      <section id="empty-state" class="empty-state">
+        <p>打开 BOSS 职位列表，在左侧选择岗位。</p>
+        <button id="analyze-empty" class="primary">分析当前岗位</button>
+      </section>
+
+      <section id="job-card" class="hidden">
+        <div class="job-heading">
+          <div>
+            <h2 id="job-title"></h2>
+            <p id="job-meta"></p>
+          </div>
+          <span id="history-badge" class="badge hidden">已处理</span>
+        </div>
+        <button id="analyze" class="primary wide">AI 分析当前岗位</button>
+      </section>
+
+      <section id="loading" class="loading hidden" aria-live="polite">
+        <span class="spinner"></span>
+        <p>正在对照简历分析岗位...</p>
+      </section>
+
+      <section id="result" class="hidden">
+        <div class="score-row">
+          <div id="score" class="score">0</div>
+          <div>
+            <strong id="recommendation"></strong>
+            <p id="summary"></p>
+          </div>
+        </div>
+
+        <div class="detail-block">
+          <h3>匹配优势</h3>
+          <ul id="strengths"></ul>
+        </div>
+        <div class="detail-block">
+          <h3>需要留意</h3>
+          <ul id="concerns"></ul>
+        </div>
+        <label for="greeting">定制招呼语</label>
+        <textarea id="greeting" rows="7"></textarea>
+        <div class="actions">
+          <button id="skip" class="secondary">跳过</button>
+          <button id="fill" class="primary">填入沟通框</button>
+          <button id="send" class="danger hidden">直接发送</button>
+        </div>
+      </section>
+
+      <div id="error" class="error hidden" role="alert"></div>
+    </main>
+    <script src="src/sidepanel.js" type="module"></script>
+  </body>
+</html>
