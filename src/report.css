@@ -1,0 +1,37 @@
+:root { font-family: Inter, "Microsoft YaHei", system-ui, sans-serif; color: #172026; background: #eef3f4; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 22px 28px; background: #16363a; color: white; }
+h1 { margin: 0 0 5px; font-size: 22px; }
+header p { margin: 0; color: #c8dcde; font-size: 12px; }
+#mode { padding: 5px 9px; border: 1px solid #6f9598; border-radius: 4px; font-size: 12px; }
+main { padding: 22px 28px 36px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.stats div { padding: 14px; border: 1px solid #cad6d8; background: white; border-radius: 6px; }
+.stats strong, .stats span { display: block; }
+.stats strong { margin-bottom: 4px; font-size: 25px; color: #007f80; }
+.stats span { color: #66777b; font-size: 12px; }
+section { margin-bottom: 20px; }
+h2 { margin: 0 0 11px; font-size: 16px; }
+.review { padding: 15px; border-left: 4px solid #00a6a7; background: white; }
+.review p { margin: 0; line-height: 1.65; }
+.job { margin-bottom: 10px; padding: 15px; border: 1px solid #cad6d8; background: white; border-radius: 6px; }
+.job-heading { display: flex; justify-content: space-between; gap: 12px; }
+.job h3 { margin: 0 0 5px; font-size: 15px; }
+.job .company, .job .meta { color: #617176; font-size: 12px; }
+.job .content { margin: 11px 0 0; color: #394b4f; font-size: 13px; line-height: 1.65; }
+.detail-button { margin-top: 10px; padding: 7px 10px; border: 1px solid #8ab5b7; border-radius: 5px; background: #f3fbfb; color: #176b6c; cursor: pointer; }
+.job-jd { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; padding: 10px; background: #f6f9f9; border-radius: 6px; font: inherit; line-height: 1.65; }
+#jobDetailDialog { width: min(760px, calc(100vw - 32px)); max-height: 84vh; padding: 18px; border: 0; border-radius: 8px; box-shadow: 0 18px 60px #10282d55; }
+#jobDetailDialog::backdrop { background: #10282d88; }
+.dialog-heading { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.dialog-heading h2 { margin-bottom: 4px; }
+.dialog-heading p { margin: 0; color: #617176; font-size: 12px; }
+.dialog-heading button { border: 0; border-radius: 5px; padding: 7px 11px; cursor: pointer; }
+#dialogJd { max-height: calc(84vh - 90px); overflow: auto; }
+.failures { display: grid; gap: 8px; }
+.failure { padding: 10px 12px; border-left: 3px solid #b23b2f; background: #fff7f6; border-radius: 5px; }
+.failure p { margin: 5px 0; white-space: pre-wrap; word-break: break-word; }
+.failure small { color: #617176; }
+.empty { color: #617176; }
+@media (max-width: 620px) { .stats { grid-template-columns: repeat(2, 1fr); } }
