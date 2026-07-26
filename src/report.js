@@ -3,6 +3,7 @@ const reportId = params.get("id");
 const { deliveryReports = [] } = await chrome.storage.local.get("deliveryReports");
 const report = deliveryReports.find((item) => item.id === reportId);
 const detailDialog = document.getElementById("jobDetailDialog");
+let retryableFailures = [];
 document.getElementById("closeDialog").addEventListener("click", () => detailDialog.close());
 
 if (!report) {
@@ -12,9 +13,10 @@ if (!report) {
   document.getElementById("applied").textContent = report.applied;
   document.getElementById("skipped").textContent = report.skipped;
   const failures = (report.failures || []).filter((item) => item.stage !== "搜索");
+  retryableFailures = failures.filter((item) => item.keyword && (item.url || item.jobTitle));
   const failedCount = failures.length;
   document.getElementById("failed").textContent = failedCount;
-  const modeLabels = { scheduled: "BOSS 定时投递", manual: "BOSS 手动启动", zhilian: "智联手动启动", scheduled_zhilian: "智联定时投递" };
+  const modeLabels = { scheduled: "BOSS 定时投递", manual: "BOSS 手动启动", retry: "BOSS 失败岗位重试", zhilian: "智联手动启动", scheduled_zhilian: "智联定时投递", retry_zhilian: "智联失败岗位重试" };
   document.getElementById("mode").textContent = modeLabels[report.mode] || "自动投递";
   document.getElementById("period").textContent = `${formatTime(report.startedAt)} 至 ${formatTime(report.endedAt)}`;
   const rate = report.processed ? Math.round((report.applied / report.processed) * 100) : 0;
@@ -23,6 +25,9 @@ if (!report) {
   document.getElementById("jobs").replaceChildren(...report.jobs.map(renderJob));
   document.getElementById("failureEmpty").hidden = failures.length > 0;
   document.getElementById("failures").replaceChildren(...failures.map(renderFailure));
+  const retryAll = document.getElementById("retryAllFailures");
+  retryAll.hidden = retryableFailures.length === 0;
+  retryAll.addEventListener("click", () => launchRetry(retryableFailures));
 }
 
 function renderJob(job) {
@@ -73,7 +78,36 @@ function renderFailure(item) {
     company.textContent = `企业：${item.company}`;
     article.append(company);
   }
+  if (item.keyword && (item.url || item.jobTitle)) {
+    const actions = document.createElement("div");
+    actions.className = "failure-actions";
+    if (item.url) {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "retry-button";
+      open.textContent = "打开岗位";
+      open.addEventListener("click", () => chrome.tabs.create({ url: item.url, active: true }));
+      actions.append(open);
+    }
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "retry-button";
+    retry.textContent = "重试此岗位";
+    retry.addEventListener("click", () => launchRetry([item]));
+    actions.append(retry);
+    article.append(actions);
+  }
   return article;
+}
+
+async function launchRetry(items) {
+  if (!items.length) return;
+  const platform = String(report.mode || "").includes("zhilian") ? "zhilian" : "boss";
+  await chrome.storage.local.set({
+    recruitmentPlatform: platform,
+    pendingRetryRun: { id: crypto.randomUUID(), reportId, platform, jobs: items, createdAt: new Date().toISOString() }
+  });
+  await chrome.windows.create({ url: chrome.runtime.getURL("sidepanel.html?retry=1"), type: "normal", focused: true, width: 460, height: 820 });
 }
 
 function formatTime(value) {

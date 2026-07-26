@@ -59,7 +59,17 @@ async function initialize() {
   const { recruitmentPlatform = "boss" } = await chrome.storage.local.get("recruitmentPlatform");
   await setPlatform(recruitmentPlatform, false);
   await Promise.all([refreshJob(), renderSchedule(), renderActiveRunState()]);
-  if (new URLSearchParams(location.search).get("scheduled") === "1") {
+  const params = new URLSearchParams(location.search);
+  if (params.get("retry") === "1") {
+    const { pendingRetryRun = null } = await chrome.storage.local.get("pendingRetryRun");
+    if (pendingRetryRun?.jobs?.length) {
+      await chrome.storage.local.remove("pendingRetryRun");
+      await logEvent("info", "从投递简报启动失败岗位重试", { count: pendingRetryRun.jobs.length, reportId: pendingRetryRun.reportId });
+      await startAutoApply(false, pendingRetryRun.jobs);
+    } else {
+      showError("未找到需要重试的岗位记录");
+    }
+  } else if (params.get("scheduled") === "1") {
     await logEvent("info", "系统定时任务已触发", { systemTime: new Date().toLocaleString("zh-CN", { hour12: false }) });
     await startAutoApply(true);
   }
@@ -437,7 +447,7 @@ async function renderChatContext(context, thread, result) {
   ui["chat-context-decision"].textContent = `策略：${result.action} · ${result.questionType} · 置信度 ${result.confidence}${result.sendResume ? " · 建议发送简历" : ""}`;
 }
 
-async function startZhilianAutoApply(scheduled = false) {
+async function startZhilianAutoApply(scheduled = false, retryJobs = []) {
   clearError();
   let run = null;
   autoStarting = true;
@@ -451,14 +461,14 @@ async function startZhilianAutoApply(scheduled = false) {
     const tab = await getZhilianTab();
     if (!tab) throw new Error("请先打开智联招聘职位搜索页面");
     if (preparingStopRequested) throw new Error("用户已停止自动投递");
-    const cachedKeywords = settings.precomputedSearchKeywords || [];
+    const cachedKeywords = retryJobs.length ? [...new Set(retryJobs.map((item) => item.keyword).filter(Boolean))] : (settings.precomputedSearchKeywords || []);
     if (!cachedKeywords.length) throw new Error("尚未配置岗位搜索切片，请在设置页点击“根据简历生成”并保存");
     ui["search-keywords"].textContent = `智联将搜索：${cachedKeywords.join("、")}`;
     run = {
       id: crypto.randomUUID(), stopped: false, tabId: tab.id, searchUrl: tab.url,
       keywords: cachedKeywords, processed: 0, applied: 0, skipped: 0, failed: 0,
       communicationTab: null, completion: null, waitResolvers: [],
-      startedAt: new Date().toISOString(), mode: scheduled ? "scheduled_zhilian" : "zhilian", appliedJobs: [], failedJobs: []
+      startedAt: new Date().toISOString(), mode: retryJobs.length ? "retry_zhilian" : scheduled ? "scheduled_zhilian" : "zhilian", appliedJobs: [], failedJobs: [], retryJobs
     };
     autoRun = run;
     autoStarting = false;
@@ -509,7 +519,7 @@ async function runZhilianQueue(settings, run, tab) {
       let jobs = search.jobs || [];
       let currentPage = 1;
       while (!run.stopped) {
-        const queuedJob = jobs.find((job) => !seen.has(jobIdentity(job)));
+        const queuedJob = jobs.find((job) => !seen.has(jobIdentity(job)) && isRequestedRetryJob(run, keyword, job));
         if (queuedJob) {
           seen.add(jobIdentity(queuedJob));
           await processZhilianJob(tab, queuedJob, settings, run, keyword);
@@ -612,7 +622,7 @@ async function processZhilianJob(sourceTab, queuedJob, settings, run, keyword) {
       title: queuedJob.title || detail.job.title,
       salary: detail.job.salary || queuedJob.salary
     };
-    const analyzed = await chrome.runtime.sendMessage({ type: "ANALYZE_JOB", job, runId: run.id });
+    const analyzed = await chrome.runtime.sendMessage({ type: "ANALYZE_JOB", job, runId: run.id, includeGreeting: false });
     if (run.stopped) return;
     if (!analyzed?.ok) throw new Error(analyzed?.error || "智联岗位分析失败");
     const result = analyzed.result;
@@ -640,7 +650,11 @@ async function processZhilianJob(sourceTab, queuedJob, settings, run, keyword) {
   } catch (error) {
     if (!run.stopped) {
       run.failed += 1;
-      run.failedJobs.push({ stage: "岗位处理", jobTitle: queuedJob.title, company: queuedJob.company, keyword, reason: error.message || String(error) });
+      run.failedJobs.push({
+        stage: "岗位处理", platform: "zhilian", jobTitle: queuedJob.title, company: queuedJob.company,
+        keyword, url: queuedJob.url || "", salary: queuedJob.salary || "",
+        job: { ...queuedJob }, reason: error.message || String(error)
+      });
       await logEvent("error", `智联岗位处理失败：${queuedJob.title}`, error);
     }
   } finally {
@@ -710,8 +724,8 @@ async function waitForZhilianVerification(tab, run) {
   }
 }
 
-async function startAutoApply(scheduled = false) {
-  if (currentPlatform === "zhilian") return startZhilianAutoApply(scheduled);
+async function startAutoApply(scheduled = false, retryJobs = []) {
+  if (currentPlatform === "zhilian") return startZhilianAutoApply(scheduled, retryJobs);
   clearError();
   let run = null;
   autoStarting = true;
@@ -735,7 +749,7 @@ async function startAutoApply(scheduled = false) {
     if (!context?.ok) throw new Error(context?.error || "无法识别 BOSS 推荐岗位");
     await logEvent("info", "BOSS 启动 3/6：推荐岗位识别完成", context);
     if (preparingStopRequested) throw new Error("用户已停止自动投递");
-    const cachedKeywords = settings.precomputedSearchKeywords || [];
+    const cachedKeywords = retryJobs.length ? [...new Set(retryJobs.map((item) => item.keyword).filter(Boolean))] : (settings.precomputedSearchKeywords || []);
     if (!cachedKeywords.length) throw new Error("尚未配置岗位搜索切片，请在设置页点击“根据简历生成”并保存");
     await logEvent("info", "BOSS 启动 4/5：已读取预生成岗位切片", { count: cachedKeywords.length, keywords: cachedKeywords });
     ui["current-role"].textContent = context?.currentRole || "未识别";
@@ -757,9 +771,10 @@ async function startAutoApply(scheduled = false) {
       completion: null,
       waitResolvers: [],
       startedAt: new Date().toISOString(),
-      mode: scheduled ? "scheduled" : "manual",
+      mode: retryJobs.length ? "retry" : scheduled ? "scheduled" : "manual",
       appliedJobs: [],
-      failedJobs: []
+      failedJobs: [],
+      retryJobs
     };
     autoRun = run;
     autoStarting = false;
@@ -857,7 +872,7 @@ async function runAutoQueue(settings, run) {
       let batch = search.jobs;
       let unchangedScrolls = 0;
       while (!run.stopped && unchangedScrolls < 8) {
-        const queuedJob = batch.find((job) => !seen.has(jobIdentity(job)));
+        const queuedJob = batch.find((job) => !seen.has(jobIdentity(job)) && isRequestedRetryJob(run, keyword, job));
         if (queuedJob) {
           seen.add(jobIdentity(queuedJob));
           await processAutoJob(tab, queuedJob, settings, keyword, run);
@@ -931,11 +946,11 @@ async function processAutoJob(tab, queuedJob, settings, keyword, run) {
       if (previousStatus) await logEvent("info", "重试未完成的历史岗位", { title: job.title, jobId: job.jobId, status: previousStatus });
 
       if (run.stopped) return;
-      const analyzed = await chrome.runtime.sendMessage({ type: "ANALYZE_JOB", job, runId: run.id });
+      const analyzed = await chrome.runtime.sendMessage({ type: "ANALYZE_JOB", job, runId: run.id, includeGreeting: false });
       if (run.stopped) return;
       if (!analyzed?.ok) throw new Error(analyzed?.error || "AI 分析失败");
       const result = analyzed.result;
-      const greeting = result.greeting;
+      let greeting = "";
       currentJob = job;
       currentResult = result;
       await logEvent("info", "岗位分析完成", {
@@ -953,6 +968,11 @@ async function processAutoJob(tab, queuedJob, settings, keyword, run) {
         await saveHistoryForJob(job, result, "skipped_auto", greeting);
         run.skipped += 1;
       } else {
+        ui["auto-progress"].textContent = `评分 ${result.score} 达标，正在生成招呼语：${job.title}`;
+        const greetingResponse = await chrome.runtime.sendMessage({ type: "GENERATE_JOB_GREETING", job, analysis: result });
+        if (!greetingResponse?.ok || !greetingResponse.greeting) throw new Error(greetingResponse?.error || "生成招呼语失败");
+        greeting = greetingResponse.greeting;
+        result.greeting = greeting;
         const archiveJob = {
           ...job,
           company: chooseCompanyName(job.company, queuedJob.company),
@@ -1022,7 +1042,11 @@ async function processAutoJob(tab, queuedJob, settings, keyword, run) {
       await focusSourcePage(tab);
       if (run.stopped) return;
       run.failed += 1;
-      run.failedJobs.push({ stage: "岗位处理", jobTitle: queuedJob.title, company: queuedJob.company, keyword, reason: error.message || String(error) });
+      run.failedJobs.push({
+        stage: "岗位处理", platform: "boss", jobTitle: queuedJob.title, company: queuedJob.company,
+        keyword, url: queuedJob.url || currentJob?.url || "", salary: queuedJob.salary || currentJob?.salary || "",
+        job: { ...queuedJob, url: queuedJob.url || currentJob?.url || "" }, reason: error.message || String(error)
+      });
       await logEvent("error", `岗位处理失败：${queuedJob.title}`, error);
       showError(`${queuedJob.title}：${error.message}`);
     } finally {
@@ -1046,6 +1070,19 @@ function delayForRun(run, milliseconds) {
 
 function jobIdentity(job) {
   return job.url || `${job.title}|${job.company}`;
+}
+
+function isRequestedRetryJob(run, keyword, job) {
+  if (!run.retryJobs?.length) return true;
+  return run.retryJobs.some((item) => item.keyword === keyword && retryJobMatches(item, job));
+}
+
+function retryJobMatches(target, job) {
+  const targetUrl = String(target.url || target.job?.url || "").split("#")[0];
+  const jobUrl = String(job.url || "").split("#")[0];
+  if (targetUrl && jobUrl && (targetUrl === jobUrl || targetUrl.includes(jobUrl) || jobUrl.includes(targetUrl))) return true;
+  return normalizeWhitelistText(target.jobTitle || target.job?.title) === normalizeWhitelistText(job.title)
+    && (!target.company || normalizeWhitelistText(target.company) === normalizeWhitelistText(job.company));
 }
 
 function whitelistMatchesJob(entry, job) {

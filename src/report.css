@@ -13,6 +13,10 @@ main { padding: 22px 28px 36px; }
 .stats span { color: #66777b; font-size: 12px; }
 section { margin-bottom: 20px; }
 h2 { margin: 0 0 11px; font-size: 16px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.section-heading h2 { margin: 0; }
+.retry-button { padding: 7px 11px; border: 1px solid #29898a; border-radius: 5px; background: #f3fbfb; color: #176b6c; cursor: pointer; }
+.failure-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .review { padding: 15px; border-left: 4px solid #00a6a7; background: white; }
 .review p { margin: 0; line-height: 1.65; }
 .job { margin-bottom: 10px; padding: 15px; border: 1px solid #cad6d8; background: white; border-radius: 6px; }

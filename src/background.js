@@ -36,7 +36,13 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "ANALYZE_JOB") {
-    analyzeJob(message.job, message.runId)
+    analyzeJob(message.job, message.runId, message.includeGreeting !== false)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "GENERATE_JOB_GREETING") {
+    generateJobGreeting(message.job, message.analysis)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -614,7 +620,7 @@ function mergeSettings(defaults, value = {}) {
   };
 }
 
-async function analyzeJob(job, runId = null) {
+async function analyzeJob(job, runId = null, includeGreeting = true) {
   const { settings: stored } = await chrome.storage.local.get("settings");
   const settings = mergeSettings(DEFAULTS.settings, stored);
   validateSettings(settings);
@@ -649,7 +655,7 @@ async function analyzeJob(job, runId = null) {
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: buildSystemPrompt(settings) },
+          { role: "system", content: buildSystemPrompt(settings, includeGreeting) },
           { role: "user", content: JSON.stringify({ profile: settings.profile, job }) }
         ]
       }),
@@ -666,8 +672,24 @@ async function analyzeJob(job, runId = null) {
   const payload = await response.json();
   const content = payload.choices?.[0]?.message?.content;
   if (!content) throw new Error("AI 没有返回分析内容");
-  const result = normalizeAnalysis(JSON.parse(content), settings);
+  const result = normalizeAnalysis(JSON.parse(content), settings, includeGreeting);
   return { ok: true, result };
+}
+
+async function generateJobGreeting(job, analysis = {}) {
+  const { settings: stored } = await chrome.storage.local.get("settings");
+  const settings = mergeSettings(DEFAULTS.settings, stored);
+  validateSettings(settings);
+  const value = await callJsonModel(settings, [
+    {
+      role: "system",
+      content: `你是候选人的求职沟通助手。该岗位已经通过评分筛选，现在只生成一条中文招呼语。必须使用候选人第一人称，点出岗位需求与真实经历的对应关系，不得虚构项目、年限、成果或技能，不得写成HR邀请候选人的口吻。语气自然、不卑不亢，不写“精通”除非简历明确支持，不超过 ${settings.greetingMaxLength} 个汉字。只返回 JSON：{"greeting":"..."}`
+    },
+    { role: "user", content: JSON.stringify({ profile: settings.profile, job, matchedStrengths: analysis.matchedStrengths || [], concerns: analysis.concerns || [], score: analysis.score }) }
+  ], 0.2, 45000);
+  const greeting = String(value.greeting || "").trim().slice(0, settings.greetingMaxLength);
+  if (!greeting) throw new Error("AI 未生成有效招呼语");
+  return { ok: true, greeting };
 }
 
 async function scheduleAutoApply(when) {
@@ -749,14 +771,14 @@ function getInactiveRecruiterReason(activity) {
   return "";
 }
 
-function buildSystemPrompt(settings) {
-  return `你是应聘者的求职匹配助手，用户是正在求职的候选人，对方是招聘者或 HR。只依据提供的简历和岗位信息判断，绝不虚构经历。返回 JSON，字段必须为：score(0-100整数)、recommendation(apply/caution/skip)、summary(一句话)、matchedStrengths(字符串数组)、concerns(字符串数组)、greeting(中文招呼语)。
+function buildSystemPrompt(settings, includeGreeting = true) {
+  return `你是应聘者的求职匹配助手，用户是正在求职的候选人，对方是招聘者或 HR。只依据提供的简历和岗位信息判断，绝不虚构经历。返回 JSON，字段必须为：score(0-100整数)、recommendation(apply/caution/skip)、summary(一句话)、matchedStrengths(字符串数组)、concerns(字符串数组)${includeGreeting ? "、greeting(中文招呼语)" : "。本阶段只评分，不得生成 greeting"}。
 硬性条件请采用机会友好的兼容判断，而不是机械一票否决：候选人学历高于岗位要求时一定满足；候选人为本科、岗位写专科/大专时视为满足；候选人为硕士/研究生时视为满足本科、大专/专科要求。只有岗位明确要求更高学历且候选人确实达不到时，才将学历列为硬性不匹配。
 工作年限允许合理弹性：岗位要求 3 年时，候选人有约 2 年真实相关经验可视为基本满足；岗位要求 5 年时，候选人有约 4 年可视为基本满足。对“年以上”要求默认允许少 1 年以内的差距，但必须在 concerns 中说明差距；如果差距超过 1 年、经验完全不相关，或岗位明确要求不可替代的资质，才判定为硬性不匹配。实习、项目和全职经历可按与岗位的相关程度合并评估，不得因为一年以内的差距直接 recommendation=skip。
-greeting 必须使用候选人第一人称向招聘者打招呼，表达应聘意向；需要点出岗位需求与候选人真实优势的对应关系，不得写成 HR 邀请候选人面试或介绍职位的口吻。语气自然、不卑不亢，不写“精通”除非简历明确支持，不超过 ${settings.greetingMaxLength} 个汉字。评分低于 ${settings.minimumScore} 时 recommendation 不得为 apply。`;
+${includeGreeting ? `greeting 必须使用候选人第一人称向招聘者打招呼，表达应聘意向；需要点出岗位需求与候选人真实优势的对应关系，不得写成 HR 邀请候选人面试或介绍职位的口吻。语气自然、不卑不亢，不写“精通”除非简历明确支持，不超过 ${settings.greetingMaxLength} 个汉字。` : "不要输出 greeting 字段，减少无效生成。"}评分低于 ${settings.minimumScore} 时 recommendation 不得为 apply。`;
 }
 
-function normalizeAnalysis(value, settings) {
+function normalizeAnalysis(value, settings, includeGreeting = true) {
   const score = Math.max(0, Math.min(100, Math.round(Number(value.score) || 0)));
   const allowed = ["apply", "caution", "skip"];
   let recommendation = allowed.includes(value.recommendation) ? value.recommendation : "caution";
@@ -767,7 +789,7 @@ function normalizeAnalysis(value, settings) {
     summary: String(value.summary || "暂无摘要"),
     matchedStrengths: toStringArray(value.matchedStrengths),
     concerns: toStringArray(value.concerns),
-    greeting: String(value.greeting || "").slice(0, settings.greetingMaxLength)
+    greeting: includeGreeting ? String(value.greeting || "").slice(0, settings.greetingMaxLength) : ""
   };
 }
 
