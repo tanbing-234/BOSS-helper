@@ -303,7 +303,8 @@ async function toggleChatProcessing() {
   await startChatProcessing();
 }
 
-async function startChatProcessing() {
+async function startChatProcessing(options = {}) {
+  const scanOnce = Boolean(options.scanOnce);
   const run = { stopped: false, processed: 0, replied: 0, skipped: 0, failed: 0, waitResolvers: [] };
   chatRun = run;
   show(ui["chat-status-panel"]);
@@ -313,6 +314,7 @@ async function startChatProcessing() {
     if (!settings.apiKey || !settings.model) throw new Error("请先完成 AI 接口设置");
     const tab = await getBossTab();
     if (!tab) throw new Error("未找到 BOSS 页面");
+    if (scanOnce) await focusSourcePage(tab);
     await sendToBossTab(tab, { type: "OPEN_MESSAGES" }).catch(() => {});
     await delayForChat(run, 1800);
     while (!run.stopped) {
@@ -320,10 +322,21 @@ async function startChatProcessing() {
       if (!threadsResponse?.ok) throw new Error(threadsResponse?.error || "读取聊天会话失败");
       const thread = (threadsResponse.threads || []).find((item) => item.needsReply && run[`done_${item.key}`] !== item.preview);
       if (!thread) {
+        if (scanOnce) {
+          run.emptyPolls = (run.emptyPolls || 0) + 1;
+          if (run.emptyPolls < 3) {
+            ui["chat-progress"].textContent = "正在确认消息列表和未回复会话...";
+            await delayForChat(run, 1200);
+            continue;
+          }
+          ui["chat-progress"].textContent = `消息审查完成：检查 ${run.processed} 个会话，暂无待回复消息`;
+          break;
+        }
         ui["chat-progress"].textContent = `已检查 ${run.processed} 个会话，等待新消息...`;
         await delayForChat(run, 5000);
         continue;
       }
+      run.emptyPolls = 0;
       run[`done_${thread.key}`] = thread.preview;
       const followUpKey = `${thread.recruiter}|${thread.company}`;
       if (thread.followUpCandidate) {
@@ -388,7 +401,7 @@ async function startChatProcessing() {
     await logEvent("error", "聊天任务失败", error);
     showError(error.message);
   } finally {
-    ui["chat-progress"].textContent = `已停止：检查 ${run.processed}，回复 ${run.replied}，失败 ${run.failed}`;
+    if (!scanOnce || run.stopped) ui["chat-progress"].textContent = `已停止：检查 ${run.processed}，回复 ${run.replied}，失败 ${run.failed}`;
     ui["process-chat"].textContent = "消息";
     chatRun = null;
   }
@@ -529,9 +542,7 @@ async function runZhilianQueue(settings, run, tab) {
       }
     } catch (error) {
       if (run.stopped) break;
-      run.failed += 1;
-      run.failedJobs.push({ stage: "搜索", keyword, reason: error.message || String(error) });
-      await logEvent("error", `智联搜索流程失败：${keyword}`, error);
+      await logEvent("warn", `智联岗位搜索未产生可处理结果：${keyword}`, error);
     }
   }
 }
@@ -787,6 +798,9 @@ async function startAutoApply(scheduled = false) {
     ui["auto-toggle"].disabled = false;
     ui["auto-toggle"].textContent = "开始";
     ui["auto-toggle"].classList.replace("danger", "primary");
+    if (run && !run.stopped && currentPlatform === "boss") {
+      await startPostDeliveryChatReview(run).catch((error) => logEvent("error", "投递后消息审查启动失败", error));
+    }
     if (scheduled) {
       const currentTab = await chrome.tabs.getCurrent();
       if (currentTab?.id) await chrome.tabs.remove(currentTab.id).catch(() => {});
@@ -871,12 +885,15 @@ async function runAutoQueue(settings, run) {
       }
       if (!run.stopped) await logEvent("info", "当前岗位名称已完成全部可加载结果", { keyword, processed: run.processed, unchangedScrolls });
     } catch (error) {
-      run.failed += 1;
-      run.failedJobs.push({ stage: "搜索", keyword, reason: error.message || String(error) });
-      await logEvent("error", `搜索流程失败：${keyword}`, error);
-      showError(`${keyword}：${error.message}`);
+      await logEvent("warn", `岗位搜索未产生可处理结果：${keyword}`, error);
     }
   }
+}
+
+async function startPostDeliveryChatReview(run) {
+  ui["auto-progress"].textContent = `投递结束，正在进入消息并审查未回复会话...`;
+  await logEvent("info", "开始投递后消息审查", { applied: run.applied, processed: run.processed });
+  await startChatProcessing({ scanOnce: true });
 }
 
 async function processAutoJob(tab, queuedJob, settings, keyword, run) {
@@ -1062,6 +1079,7 @@ function chooseCompanyName(detailCompany, cardCompany) {
 }
 
 async function openRunReport(run, summary) {
+  const reportableFailures = (run.failedJobs || []).filter((item) => item.stage !== "搜索");
   const report = {
     id: crypto.randomUUID(),
     mode: run.mode,
@@ -1072,9 +1090,9 @@ async function openRunReport(run, summary) {
     processed: run.processed,
     applied: run.applied,
     skipped: run.skipped,
-    failed: run.failed,
+    failed: reportableFailures.length,
     jobs: run.appliedJobs,
-    failures: run.failedJobs || []
+    failures: reportableFailures
   };
   const { deliveryReports = [] } = await chrome.storage.local.get("deliveryReports");
   await chrome.storage.local.set({ deliveryReports: [...deliveryReports, report].slice(-30) });

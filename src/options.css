@@ -7,6 +7,7 @@ header p { margin: 0; color: #c9dcde; }
 main { width: min(900px, calc(100% - 32px)); margin: 22px auto 60px; }
 section { padding: 20px 0; border-bottom: 1px solid #cbd5d7; }
 h2 { margin: 0 0 16px; font-size: 18px; }
+h3 { margin: 18px 0 10px; font-size: 15px; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 label { display: block; margin-bottom: 14px; font-size: 13px; font-weight: 700; }
 input, textarea, select { display: block; width: 100%; margin-top: 7px; border: 1px solid #b9c6c8; border-radius: 6px; padding: 10px 11px; background: white; font: inherit; font-weight: 400; }
@@ -34,6 +35,20 @@ button { min-height: 40px; padding: 8px 18px; border-radius: 6px; border: 1px so
 .knowledge-row { display: grid; grid-template-columns: 1fr 2fr 70px; gap: 8px; align-items: start; margin-bottom: 8px; }
 .knowledge-row input, .knowledge-row textarea { margin: 0; }
 .knowledge-row button { min-height: 38px; padding: 6px 9px; }
+.rag-inbox-row { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr 80px; gap: 8px; align-items: start; margin-bottom: 10px; }
+.rag-inbox-row textarea { margin: 0; }
+.rag-question { padding: 9px; border: 1px solid #cbd5d7; border-radius: 6px; background: #f8fafb; font-size: 13px; line-height: 1.5; }
+.rag-question small { display: block; margin-top: 5px; color: #627276; }
+.rag-subheading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px; }
+.rag-subheading h3 { margin: 0; }
+.rag-test-row { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr 130px 72px; gap: 8px; align-items: start; margin-bottom: 10px; }
+.rag-test-row input, .rag-test-row textarea, .rag-test-row select { margin: 0; }
+.rag-test-meta { font-size: 11px; color: #627276; margin-top: 4px; }
+.rag-progress { margin: 14px 0 20px; padding: 14px; border: 1px solid #9bcfd0; border-radius: 8px; background: #f4fbfb; }
+.rag-progress-heading { display: flex; justify-content: space-between; gap: 10px; }
+.rag-progress-track { height: 8px; margin-top: 10px; overflow: hidden; border-radius: 99px; background: #dce8e9; }
+.rag-progress-track span { display: block; width: 0; height: 100%; background: #00a6a7; transition: width .25s ease; }
+.rag-progress p { margin: 8px 0 0; color: #52666a; font-size: 12px; }
 .search-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 8px; margin: 10px 0 14px; }
 .search-row input { margin: 0; }
 .wordcloud-view { min-width: 0; }
@@ -43,4 +58,4 @@ button { min-height: 40px; padding: 8px 18px; border-radius: 6px; border: 1px so
 .is-collapsed { display: none; }
 .is-filtered-out { display: none; }
 #status { color: #277779; font-size: 13px; }
-@media (max-width: 620px) { .grid, .search-row { grid-template-columns: 1fr; } .inline-actions { flex-wrap: wrap; } }
+@media (max-width: 620px) { .grid, .search-row, .rag-inbox-row, .rag-test-row { grid-template-columns: 1fr; } .inline-actions { flex-wrap: wrap; } }

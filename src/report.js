@@ -11,15 +11,16 @@ if (!report) {
   document.getElementById("processed").textContent = report.processed;
   document.getElementById("applied").textContent = report.applied;
   document.getElementById("skipped").textContent = report.skipped;
-  document.getElementById("failed").textContent = report.failed;
+  const failures = (report.failures || []).filter((item) => item.stage !== "搜索");
+  const failedCount = failures.length;
+  document.getElementById("failed").textContent = failedCount;
   const modeLabels = { scheduled: "BOSS 定时投递", manual: "BOSS 手动启动", zhilian: "智联手动启动", scheduled_zhilian: "智联定时投递" };
   document.getElementById("mode").textContent = modeLabels[report.mode] || "自动投递";
   document.getElementById("period").textContent = `${formatTime(report.startedAt)} 至 ${formatTime(report.endedAt)}`;
   const rate = report.processed ? Math.round((report.applied / report.processed) * 100) : 0;
-  document.getElementById("review").textContent = `${report.stopped ? "本轮由用户停止。" : "本轮已完成全部可加载岗位。"} 共处理 ${report.processed} 个岗位，成功投递 ${report.applied} 个，投递率 ${rate}%，跳过 ${report.skipped} 个，失败 ${report.failed} 个。`;
+  document.getElementById("review").textContent = `${report.stopped ? "本轮由用户停止。" : "本轮已完成全部可加载岗位。"} 共处理 ${report.processed} 个岗位，成功投递 ${report.applied} 个，投递率 ${rate}%，跳过 ${report.skipped} 个，岗位处理失败 ${failedCount} 个。`;
   document.getElementById("empty").hidden = report.jobs.length > 0;
   document.getElementById("jobs").replaceChildren(...report.jobs.map(renderJob));
-  const failures = report.failures || [];
   document.getElementById("failureEmpty").hidden = failures.length > 0;
   document.getElementById("failures").replaceChildren(...failures.map(renderFailure));
 }

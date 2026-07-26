@@ -23,13 +23,20 @@ document.getElementById("toggleWhitelist").addEventListener("click", () => toggl
 document.getElementById("toggleChatKnowledge").addEventListener("click", () => toggleOptionsPanel("chatKnowledgeContent", "toggleChatKnowledge"));
 document.getElementById("searchWhitelist").addEventListener("click", filterWhitelistRows);
 document.getElementById("searchChatKnowledge").addEventListener("click", filterChatKnowledgeRows);
+document.getElementById("saveRagInbox").addEventListener("click", saveRagInbox);
+document.getElementById("generateRagTests").addEventListener("click", generateRagTests);
+document.getElementById("addRagTestCase").addEventListener("click", () => appendRagTestRow({ source: "manual", expectedAction: "reply" }));
 ui.apiBaseUrl.addEventListener("input", invalidateConnection);
 ui.apiKey.addEventListener("input", invalidateConnection);
 load();
 
 async function load() {
-  const { settings = {}, history = {}, applicationWhitelist = [], applicationArchives = [], deliveryReports = [], chatKnowledge = [] } = await chrome.storage.local.get(["settings", "history", "applicationWhitelist", "applicationArchives", "deliveryReports", "chatKnowledge"]);
+  const { settings = {}, history = {}, applicationWhitelist = [], applicationArchives = [], deliveryReports = [], chatKnowledge = [], ragQuestionInbox = [], ragTestCases = [], ragBuildProgress = null } = await chrome.storage.local.get(["settings", "history", "applicationWhitelist", "applicationArchives", "deliveryReports", "chatKnowledge", "ragQuestionInbox", "ragTestCases", "ragBuildProgress"]);
   const repaired = repairApplicationRecords(applicationWhitelist, applicationArchives, history, deliveryReports);
+  const repairedRagTestCases = ragTestCases.map(repairRagTestCaseLanguage);
+  if (JSON.stringify(repairedRagTestCases) !== JSON.stringify(ragTestCases)) {
+    await chrome.storage.local.set({ ragTestCases: repairedRagTestCases });
+  }
   const cleanedArchives = repaired.archives.map((archive) => ({ ...archive, description: cleanStoredDescription(archive.description || "") }));
   const archivesChanged = JSON.stringify(cleanedArchives) !== JSON.stringify(repaired.archives);
   repaired.archives = cleanedArchives;
@@ -68,6 +75,10 @@ async function load() {
   }
   renderWhitelistWordClouds(normalizedWhitelist, repaired.archives);
   renderChatKnowledge(chatKnowledge);
+  renderRagInbox(ragQuestionInbox);
+  renderRagTestSummary(repairedRagTestCases);
+  renderRagTestCases(repairedRagTestCases);
+  renderRagBuildProgress(ragBuildProgress);
   await restoreOptionsPanels();
 }
 
@@ -402,6 +413,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     renderWhitelist(changes.applicationWhitelist.newValue || []);
   }
   if (changes.applicationWhitelist || changes.applicationArchives) scheduleWordCloudRefresh();
+  if (changes.ragBuildProgress) renderRagBuildProgress(changes.ragBuildProgress.newValue);
+  if (changes.ragTestCases) {
+    renderRagTestCases(changes.ragTestCases.newValue || []);
+    renderRagTestSummary(changes.ragTestCases.newValue || []);
+  }
 });
 
 async function toggleOptionsPanel(contentId, buttonId) {
@@ -556,9 +572,12 @@ async function saveChatKnowledge() {
     question: row.querySelector("[data-field='question']").value.trim(),
     answer: row.querySelector("[data-field='answer']").value.trim()
   })).filter((item) => item.question && item.answer);
-  await chrome.storage.local.set({ chatKnowledge });
+  const ragTestCases = readRagTestRows();
+  await chrome.storage.local.set({ chatKnowledge, ragTestCases });
   renderChatKnowledge(chatKnowledge);
-  setStatus(`沟通知识库已保存，共 ${chatKnowledge.length} 条`);
+  renderRagTestCases(ragTestCases);
+  renderRagTestSummary(ragTestCases);
+  setStatus(`RAG 工作台已保存：问答 ${chatKnowledge.length} 条，测试用例 ${ragTestCases.length} 条`);
 }
 
 function updateChatKnowledgeEmpty() {
@@ -572,13 +591,174 @@ async function generateChatKnowledge() {
   try {
     const response = await chrome.runtime.sendMessage({ type: "GENERATE_CHAT_KNOWLEDGE" });
     if (!response?.ok) throw new Error(response?.error || "生成失败");
-    renderChatKnowledge(response.items);
-    setStatus(`已生成 ${response.items.length} 条草稿，请检查后保存`);
+    const current = [...document.querySelectorAll("#chatKnowledgeRows .knowledge-row")].map((row) => ({
+      id: row.dataset.id, question: row.querySelector("[data-field='question']").value.trim(), answer: row.querySelector("[data-field='answer']").value.trim()
+    })).filter((item) => item.question && item.answer);
+    const identities = new Set(current.map((item) => item.question.toLowerCase().replace(/\s+/g, "")));
+    const merged = [...current, ...response.items.filter((item) => !identities.has(item.question.toLowerCase().replace(/\s+/g, "")))];
+    renderChatKnowledge(merged);
+    setStatus(`新增 ${merged.length - current.length} 条问答草稿，已与现有 ${current.length} 条合并`);
   } catch (error) {
     setStatus(error.message, true);
   } finally {
     button.disabled = false;
   }
+}
+
+function renderRagInbox(items) {
+  const container = document.getElementById("ragInboxRows");
+  container.replaceChildren();
+  items.filter((item) => !item.status || item.status === "pending").sort((a, b) => (b.frequency || 1) - (a.frequency || 1)).forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "rag-inbox-row";
+    row.dataset.id = item.id;
+    const question = document.createElement("div");
+    question.className = "rag-question";
+    question.textContent = item.question;
+    const meta = document.createElement("small");
+    meta.textContent = `出现 ${item.frequency || 1} 次 · ${item.source || "招聘对话"}`;
+    question.append(meta);
+    const answer = document.createElement("textarea");
+    answer.rows = 4;
+    answer.placeholder = "请基于真实简历回答；没有相关经历时也请明确说明。";
+    answer.value = item.answer || "";
+    answer.dataset.field = "answer";
+    const ignore = document.createElement("button");
+    ignore.className = "secondary";
+    ignore.textContent = "忽略";
+    ignore.addEventListener("click", () => { row.dataset.ignored = "true"; row.remove(); });
+    row.append(question, answer, ignore);
+    container.append(row);
+  });
+  document.getElementById("ragInboxEmpty").style.display = container.children.length ? "none" : "block";
+}
+
+async function saveRagInbox() {
+  const { ragQuestionInbox = [], chatKnowledge = [], ragTestCases = [] } = await chrome.storage.local.get(["ragQuestionInbox", "chatKnowledge", "ragTestCases"]);
+  const answers = new Map([...document.querySelectorAll("#ragInboxRows .rag-inbox-row")].map((row) => [row.dataset.id, row.querySelector("[data-field='answer']").value.trim()]));
+  const visibleIds = new Set([...document.querySelectorAll("#ragInboxRows .rag-inbox-row")].map((row) => row.dataset.id));
+  const resolved = ragQuestionInbox.filter((item) => answers.get(item.id));
+  const now = new Date().toISOString();
+  const nextKnowledge = [...chatKnowledge, ...resolved.map((item) => ({ id: crypto.randomUUID(), question: item.question, answer: answers.get(item.id), source: "collected", createdAt: now }))];
+  const nextTests = [...ragTestCases, ...resolved.map((item) => ({ id: crypto.randomUUID(), question: item.question, expectedAction: "reply", expectedAnswer: answers.get(item.id), source: "admin_collected", createdAt: now }))].slice(-500);
+  const nextInbox = ragQuestionInbox.map((item) => answers.get(item.id)
+    ? { ...item, answer: answers.get(item.id), status: "resolved", resolvedAt: now }
+    : (item.status === "pending" && !visibleIds.has(item.id) ? { ...item, status: "ignored", resolvedAt: now } : item));
+  await chrome.storage.local.set({ chatKnowledge: nextKnowledge, ragQuestionInbox: nextInbox, ragTestCases: nextTests });
+  renderChatKnowledge(nextKnowledge);
+  renderRagInbox(nextInbox);
+  renderRagTestSummary(nextTests);
+  setStatus(`已补充 ${resolved.length} 条答案并加入知识库与测试集`);
+}
+
+async function generateRagTests() {
+  const button = document.getElementById("generateRagTests");
+  button.disabled = true;
+  renderRagBuildProgress({ status: "running", stage: "准备", percent: 3, message: "正在保存设置并检查简历与 API 配置..." });
+  try {
+    const saved = await save(false);
+    if (!saved) return;
+    const response = await chrome.runtime.sendMessage({ type: "GENERATE_RAG_TEST_SUITE" });
+    if (!response?.ok) throw new Error(response?.error || "测试集生成失败");
+    const { ragTestCases = [] } = await chrome.storage.local.get("ragTestCases");
+    renderRagTestCases(ragTestCases);
+    renderRagTestSummary(ragTestCases);
+    setStatus(`生成 ${response.generated} 条，评估通过 ${response.accepted} 条，过滤 ${response.rejected} 条`);
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderRagTestSummary(items) {
+  const sources = items.reduce((result, item) => { result[item.source || "other"] = (result[item.source || "other"] || 0) + 1; return result; }, {});
+  document.getElementById("ragTestSummary").textContent = `当前测试集 ${items.length} 条：AI评估通过 ${sources.api_generated || 0}，人工采集 ${sources.admin_collected || 0}，真实对话 ${sources.production || 0}`;
+}
+
+function renderRagBuildProgress(progress = {}) {
+  const panel = document.getElementById("ragBuildProgress");
+  if (!progress || !progress.status) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
+  document.getElementById("ragBuildStage").textContent = progress.stage || "处理中";
+  document.getElementById("ragBuildPercent").textContent = `${percent}%`;
+  document.getElementById("ragBuildBar").style.width = `${percent}%`;
+  document.getElementById("ragBuildMessage").textContent = progress.message || "";
+  panel.style.borderColor = progress.status === "error" ? "#d69a94" : progress.status === "complete" ? "#79b99b" : "#9bcfd0";
+}
+
+function renderRagTestCases(items) {
+  const container = document.getElementById("ragTestRows");
+  container.replaceChildren();
+  items.forEach(appendRagTestRow);
+  document.getElementById("ragTestEmpty").style.display = items.length ? "none" : "block";
+}
+
+function appendRagTestRow(item = {}) {
+  const row = document.createElement("div");
+  row.className = "rag-test-row";
+  row.dataset.id = item.id || crypto.randomUUID();
+  row.dataset.source = item.source || "manual";
+  row.dataset.createdAt = item.createdAt || new Date().toISOString();
+  row.dataset.evaluation = JSON.stringify(item.evaluation || {});
+  const questionWrap = document.createElement("div");
+  const question = document.createElement("textarea");
+  question.rows = 3;
+  question.dataset.field = "question";
+  question.placeholder = "招聘者问题";
+  question.value = item.question || "";
+  const meta = document.createElement("div");
+  meta.className = "rag-test-meta";
+  meta.textContent = `${item.source || "manual"}${item.evaluation?.overall != null ? ` · 评估 ${item.evaluation.overall}分` : ""}`;
+  questionWrap.append(question, meta);
+  const answer = document.createElement("textarea");
+  answer.rows = 4;
+  answer.dataset.field = "expectedAnswer";
+  answer.placeholder = "基于简历证据的期望回答";
+  answer.value = item.expectedAnswer || "";
+  const action = document.createElement("select");
+  action.dataset.field = "expectedAction";
+  [["reply", "直接回答"], ["reply_with_boundary", "边界回答"], ["no_claim", "不作事实声明"], ["no_reply", "无需回复"], ["close", "礼貌结束"]].forEach(([value, label]) => {
+    const option = document.createElement("option"); option.value = value; option.textContent = label; action.append(option);
+  });
+  action.value = item.expectedAction || "reply";
+  const remove = document.createElement("button");
+  remove.className = "secondary";
+  remove.textContent = "删除";
+  remove.addEventListener("click", () => { row.remove(); document.getElementById("ragTestEmpty").style.display = document.querySelectorAll("#ragTestRows .rag-test-row").length ? "none" : "block"; });
+  row.append(questionWrap, answer, action, remove);
+  document.getElementById("ragTestRows").append(row);
+  document.getElementById("ragTestEmpty").style.display = "none";
+}
+
+function readRagTestRows() {
+  return [...document.querySelectorAll("#ragTestRows .rag-test-row")].map((row) => ({
+    id: row.dataset.id || crypto.randomUUID(),
+    question: row.querySelector("[data-field='question']").value.trim(),
+    expectedAnswer: row.querySelector("[data-field='expectedAnswer']").value.trim(),
+    expectedAction: row.querySelector("[data-field='expectedAction']").value,
+    source: row.dataset.source || "manual",
+    createdAt: row.dataset.createdAt || new Date().toISOString(),
+    evaluation: JSON.parse(row.dataset.evaluation || "{}")
+  })).filter((item) => item.question && (item.expectedAnswer || ["no_claim", "no_reply", "close"].includes(item.expectedAction))).slice(-500);
+}
+
+function repairRagTestCaseLanguage(item) {
+  const answer = String(item.expectedAnswer || "");
+  if (!/(?:简历|知识库|现有|当前).{0,8}(?:没有|未提及|未提供|未检索|缺少|不足)|无法(?:确认|回答)|没有搜索到|系统/.test(answer)) return item;
+  const question = String(item.question || "");
+  let expectedAnswer;
+  if (/学历|专业|学校|毕业/.test(question)) {
+    expectedAnswer = "这部分信息我可以进一步如实补充说明。针对岗位匹配，我也愿意结合实际经历，重点介绍与岗位要求相关的能力、项目准备和后续发展方向。";
+  } else if (/职业规划|未来规划|发展方向|职业方向/.test(question)) {
+    expectedAnswer = "我希望继续围绕目标岗位需要的核心能力深入积累，在实际业务和项目中形成更完整的方法与交付能力。对于新的行业场景，我也会通过快速学习和实践尽快补齐。";
+  } else if (/经验|做过|项目|功能|负责过|接触过/.test(question)) {
+    expectedAnswer = "目前我还没有直接负责过这一具体场景，但已有经历中的方法和基础能力具备一定可迁移性。我愿意结合岗位要求快速熟悉业务，并通过实际任务尽快补齐相关经验。";
+  } else {
+    expectedAnswer = "这方面我目前还没有足够直接的实践积累，但我愿意基于已有能力快速学习和适应，并结合岗位的实际要求尽快补齐。";
+  }
+  return { ...item, expectedAnswer, expectedAction: "reply_with_boundary", updatedAt: new Date().toISOString() };
 }
 
 async function testConnection() {

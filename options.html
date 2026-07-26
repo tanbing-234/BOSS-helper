@@ -53,12 +53,21 @@
       </section>
 
       <section>
-        <div class="section-heading"><h2>招聘沟通知识库</h2><div class="inline-actions"><button id="toggleChatKnowledge" class="secondary" aria-expanded="true">收起</button><button id="generateChatKnowledge" class="secondary">根据简历生成</button><button id="addChatKnowledge" class="secondary">新增</button><button id="saveChatKnowledge" class="primary">保存知识库</button></div></div>
+        <div class="section-heading"><h2>招聘沟通 RAG 工作台</h2><div class="inline-actions"><button id="toggleChatKnowledge" class="secondary" aria-expanded="true">收起</button><button id="generateRagTests" class="secondary">AI 构建知识库与测试集</button><button id="generateChatKnowledge" class="secondary">补充问答草稿</button><button id="addChatKnowledge" class="secondary">新增问答</button><button id="saveChatKnowledge" class="primary">保存全部</button></div></div>
         <div id="chatKnowledgeContent">
-          <p class="hint">维护“招聘热点问题 - 标准回答”。聊天时会与简历、个人优势和对应岗位档案一起检索；没有证据的问题不会虚构回答。</p>
+          <p class="hint">在同一处维护沟通问答、结构化简历 RAG、真实问题回流和评估测试集。AI 构建时会抽取简历证据、生成测试题并执行独立多维评估。</p>
+          <div id="ragBuildProgress" class="rag-progress" hidden><div class="rag-progress-heading"><strong id="ragBuildStage">准备中</strong><span id="ragBuildPercent">0%</span></div><div class="rag-progress-track"><span id="ragBuildBar"></span></div><p id="ragBuildMessage">等待开始</p></div>
+          <h3>沟通问答知识</h3>
           <div class="search-row"><input id="chatKnowledgeSearch" type="search" placeholder="搜索问题或回答关键词" /><button id="searchChatKnowledge" class="secondary">搜索</button></div>
           <div id="chatKnowledgeRows"></div>
           <p id="chatKnowledgeEmpty" class="hint">暂无自定义问答，插件仍会使用简历和岗位档案。</p>
+          <div class="rag-subheading"><h3>真实问题待补充</h3><button id="saveRagInbox" class="secondary">回答并入库</button></div>
+          <div id="ragInboxRows"></div>
+          <p id="ragInboxEmpty" class="hint">暂无待补充问题。</p>
+          <div class="rag-subheading"><h3>合并测试数据集</h3><button id="addRagTestCase" class="secondary">新增测试题</button></div>
+          <p id="ragTestSummary" class="hint"></p>
+          <div id="ragTestRows"></div>
+          <p id="ragTestEmpty" class="hint">暂无测试数据，请点击“AI 构建知识库与测试集”。</p>
         </div>
       </section>
 
